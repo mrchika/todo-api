@@ -26,3 +26,11 @@ def create_todo(todo: Todo):
     cur = conn.execute("INSERT INTO todos (title, done) VALUES (?,?)", (todo.title, int(todo.done)))
     conn.commit()
     return {"id": cur.lastrowid, "title": todo.title, "done": todo.done}
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # allows any website to call your API
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
