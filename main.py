@@ -1,14 +1,34 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import sqlite3
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import create_engine, Column, Integer, String, Boolean
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-app = FastAPI(title="Todo API")
+# DATABASE SETUP
+DATABASE_URL = "sqlite:///./todos.db"
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
-# Database setup
-conn = sqlite3.connect("todos.db", check_same_thread=False)
-conn.execute("CREATE TABLE IF NOT EXISTS todos (id INTEGER PRIMARY KEY, title TEXT, done INTEGER)")
+class TodoDB(Base):
+    __tablename__ = "todos"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String)
+    done = Column(Boolean, default=False)
+
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class Todo(BaseModel):
+    id: int | None = None
     title: str
     done: bool = False
 
@@ -18,19 +38,28 @@ def root():
 
 @app.get("/todos")
 def get_todos():
-    cur = conn.execute("SELECT * FROM todos")
-    return [{"id": row[0], "title": row[1], "done": bool(row[2])} for row in cur.fetchall()]
+    db = SessionLocal()
+    todos = db.query(TodoDB).all()
+    db.close()
+    return todos
 
 @app.post("/todos")
 def create_todo(todo: Todo):
-    cur = conn.execute("INSERT INTO todos (title, done) VALUES (?,?)", (todo.title, int(todo.done)))
-    conn.commit()
-    return {"id": cur.lastrowid, "title": todo.title, "done": todo.done}
-from fastapi.middleware.cors import CORSMiddleware
+    db = SessionLocal()
+    db_todo = TodoDB(title=todo.title, done=todo.done)
+    db.add(db_todo)
+    db.commit()
+    db.refresh(db_todo)
+    db.close()
+    return db_todo
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # allows any website to call your API
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.delete("/todos/{todo_id}")
+def delete_todo(todo_id: int):
+    db = SessionLocal()
+    todo = db.query(TodoDB).filter(TodoDB.id == todo_id).first()
+    if not todo:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    db.delete(todo)
+    db.commit()
+    db.close()
+    return {"message": "Deleted"}
