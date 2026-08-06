@@ -1,20 +1,21 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Boolean
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
+import os
 
-# DATABASE SETUP
-DATABASE_URL = "sqlite:///./todos.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@db:5432/todos")
+
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-class TodoDB(Base):
+class TodoModel(Base):
     __tablename__ = "todos"
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String)
-    done = Column(Boolean, default=False)
+    todo = Column(String, index=True)
+    completed = Column(Boolean, default=False)
 
 Base.metadata.create_all(bind=engine)
 
@@ -28,38 +29,21 @@ app.add_middleware(
 )
 
 class Todo(BaseModel):
-    id: int | None = None
-    title: str
-    done: bool = False
-
-@app.get("/")
-def root():
-    return {"message": "Todo API is running"}
+    todo: str
 
 @app.get("/todos")
 def get_todos():
     db = SessionLocal()
-    todos = db.query(TodoDB).all()
+    todos = db.query(TodoModel).all()
     db.close()
     return todos
 
 @app.post("/todos")
-def create_todo(todo: Todo):
+def add_todo(item: Todo):
     db = SessionLocal()
-    db_todo = TodoDB(title=todo.title, done=todo.done)
+    db_todo = TodoModel(todo=item.todo)
     db.add(db_todo)
     db.commit()
     db.refresh(db_todo)
     db.close()
     return db_todo
-
-@app.delete("/todos/{todo_id}")
-def delete_todo(todo_id: int):
-    db = SessionLocal()
-    todo = db.query(TodoDB).filter(TodoDB.id == todo_id).first()
-    if not todo:
-        raise HTTPException(status_code=404, detail="Todo not found")
-    db.delete(todo)
-    db.commit()
-    db.close()
-    return {"message": "Deleted"}
